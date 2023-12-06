@@ -1,4 +1,4 @@
-"""Get the uplink and vlan settings for a particular network"""
+"""Convers Meraki DHCP settings to a FortiGate config"""
 
 import ipaddress
 
@@ -159,57 +159,9 @@ def parse_dhcp_settings(vlan_data):
 
 
 def main():
-    primary_sn = ""
-    spare_sn = ""
-    mx_sn = ""
     dashboard = merakiops.get_dashboard()
     org_id, org_name = merakiops.select_organization(dashboard)
     network = merakiops.select_network(dashboard, org_id)
-
-    ## Check for warm spare. If found set serial number for both MXs
-    #warm_spare = dashboard.appliance.getNetworkApplianceWarmSpare(network[0])
-    #if warm_spare["enabled"]:
-    #    primary_sn = warm_spare["primarySerial"]
-    #    spare_sn = warm_spare["spareSerial"]
-    #    if warm_spare["uplinkMode"] == "virtual":
-    #        print(f"This site, {network[1]}, has a warm spare")
-    #        print(f"  VIP: {warm_spare['wan1']['ip']}")
-    #        print(f"  VIP Subnet: {warm_spare['wan1']['subnet']}")
-    ## Else warm spare not found, set single MX serial number
-    #else:
-    #    devices = dashboard.networks.getNetworkDevices(network[0])
-    #    # print(devices)
-    #    for device in devices:
-    #        if "MX" in device["model"]:
-    #            mx_sn = device["serial"]
-
-    ## For each MX found, print out WAN uplink settings
-    #MXs = [primary_sn, spare_sn, mx_sn]
-    #for each_MX in MXs:
-    #    if each_MX:
-    #        print("\nMX Serial Number: " + each_MX)
-    #        wan_info = dashboard.appliance.getDeviceApplianceUplinksSettings(each_MX)
-    #        # print(wan_info)
-    #        # Find enabled Uplink interfaces and extract config
-    #        for each in wan_info["interfaces"]:
-    #            if wan_info["interfaces"][each]["enabled"]:
-    #                if (
-    #                    wan_info["interfaces"][each]["svis"]["ipv4"]["assignmentMode"]
-    #                    == "dynamic"
-    #                ):
-    #                    print(f"  {each} Uplink is set to dynamic")
-    #                    break
-    #                print(
-    #                    f"  {each} {wan_info['interfaces'][each]['svis']['ipv4']['address']}"
-    #                )
-    #                print(
-    #                    f"  {each} {wan_info['interfaces'][each]['svis']['ipv4']['gateway']}"
-    #                )
-    #                if wan_info["interfaces"][each]["vlanTagging"]["enabled"]:
-    #                    print(f"  {each} {wan_info['interfaces'][each]['vlanTagging']}")
-    #                    # print(wan_info['interfaces'][each]['vlanTagging']['vlanId'])
-    #        print()
-
     # Find VLAN settings, handle case where vlans aren't enabled
     dhcp_settings = []
     output = []
