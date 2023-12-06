@@ -5,6 +5,33 @@ import ipaddress
 from mytools import fileops, merakiops
 
 
+def cleanse_the_data(exclude_list, fixed_list):
+    for fixed_ip in fixed_list.values():
+        search_ip = ipaddress.ip_address(fixed_ip["ip"])
+        for count, each in enumerate(exclude_list):
+            start_ip = ipaddress.ip_address(each['start'])
+            end_ip = ipaddress.ip_address(each['end'])
+            # Test for fixed ip found in exclude list
+            if search_ip >= start_ip and search_ip <= end_ip:
+                # Remove from excluded list
+                if start_ip == end_ip:
+                    exclude_list.pop(count)
+                    continue
+                if search_ip == start_ip:
+                    new_start_ip = start_ip + 1
+                    exclude_list[count]['start'] = str(new_start_ip)
+                if search_ip == end_ip:
+                    new_end_ip = end_ip - 1
+                    exclude_list[count]['end'] = str(new_end_ip)
+                # Need to make two new ranges that don't include given IP
+                new_end_ip = search_ip - 1
+                exclude_list[count]['end'] = str(new_end_ip)
+                # Now add another item to list for the new start to end
+                new_start_ip = search_ip + 1
+                exclude_list.insert(count, {'start': new_start_ip, 'end': end_ip, 'comment': ''})
+    return exclude_list
+
+
 def format_fixed_addresses(vlan_name, fixed_data):
     fixed = ["        config reserved-address\n"]
     for count, fixed_ip in enumerate(fixed_data, start=1):
@@ -16,7 +43,7 @@ def format_fixed_addresses(vlan_name, fixed_data):
         fixed.append(f'            edit {count}\n')
         fixed.append(f'                set ip {client_ip}\n')
         fixed.append(f'                set mac {client_mac}\n')
-        fixed.append(f'                set description {client_name}\n')
+        fixed.append(f'                set description \"{client_name}\"\n')
         fixed.append(f'            next\n')
     fixed.append("        end\n")
     fixed_file = vlan_name + "_fixed"
@@ -26,12 +53,12 @@ def format_fixed_addresses(vlan_name, fixed_data):
 def format_reserved_addresses(vlan_name, reserved_data):
     reserved = ["        config exclude-range\n"]
     for count, each in enumerate(reserved_data, start=1):
-        start = each["start"]
-        end = each["end"]
+        start_ip = each["start"]
+        end_ip = each["end"]
         comment = each["comment"]
         reserved.append(f'            edit {count}\n')
-        reserved.append(f"                set start-ip {start}\n")
-        reserved.append(f"                set end-ip {end}\n")
+        reserved.append(f"                set start-ip {start_ip}\n")
+        reserved.append(f"                set end-ip {end_ip}\n")
         reserved.append(f'            next\n')
     reserved.append("        end\n")
     reserved_file = vlan_name + "_reserved"
@@ -48,16 +75,21 @@ def extract_domain_name(options):
 
 def extract_option_150(options):
     count = 1
-    ips = ["config options\n"]
+    ips = ["        config options\n"]
+    new_value = ""
     for option in options:
         if option["code"] == '150':
-            ips.append(f"        edit {count}\n")
-            ips.append(f"            set code {option['code']}\n")
-            ips.append(f"            set type {option['type']}\n")
-            ips.append(f"            set value {option['value']}\n")
-            ips.append("        next\n")
+            ips.append(f"            edit {count}\n")
+            ips.append(f"                set code {option['code']}\n")
+            ips.append(f"                set type {option['type']}\n")
+            opt = option['value'].split(",")
+            for each_ip in opt:
+                quoted_ip = f'"{each_ip.strip()}"'
+                new_value += quoted_ip + " "
+            ips.append(f"                set ip {new_value.rstrip()}\n")
+            ips.append("            next\n")
             count += 1
-    ips.append("end\n")
+    ips.append("        end\n")
     if count > 1:
         return ips
     else:
@@ -67,12 +99,15 @@ def extract_option_150(options):
 def parse_dhcp_settings(vlan_data):
     dhcp_settings = []
     excluded = []
+    excluded_list = []
     fixed = []
     options = None
     dns_servers = ""
     opt_150 = []
+    new_excluded_list = []
     vlan_name = vlan_data["name"]
     vlan_id = vlan_data["id"]
+    vlan_int = "Vlan_" + str(vlan_id)
     mandatory = vlan_data["mandatoryDhcp"]
     lease_time = vlan_data["dhcpLeaseTime"]
     dns_servers = vlan_data["dnsNameservers"]
@@ -80,10 +115,14 @@ def parse_dhcp_settings(vlan_data):
     dhcp_options = vlan_data["dhcpOptions"]
     reserved_ips = vlan_data["reservedIpRanges"]
     fixed_ips = vlan_data["fixedIpAssignments"]
-    if reserved_ips:
-        excluded = format_reserved_addresses(vlan_name, reserved_ips)
+    if reserved_ips and fixed_ips:
+        new_excluded_list = cleanse_the_data(reserved_ips, fixed_ips)
     if fixed_ips:
         fixed = format_fixed_addresses(vlan_name, fixed_ips)
+    if new_excluded_list:
+        excluded = format_reserved_addresses(vlan_name, new_excluded_list)
+    else:
+        excluded = format_reserved_addresses(vlan_name, reserved_ips)
     if dhcp_options:
         options = extract_domain_name(dhcp_options)
         opt_150 = extract_option_150(dhcp_options)
@@ -92,16 +131,17 @@ def parse_dhcp_settings(vlan_data):
     subnet = vlan_data["subnet"]
     vlan_subnet = list(ipaddress.ip_network(subnet).hosts())
     netmask = ipaddress.ip_network(subnet).netmask
-    dhcp_settings.append(f"        set domain {domain_name}\n")
+    if domain_name:
+        dhcp_settings.append(f"        set domain {domain_name}\n")
     dhcp_settings.append(f"        set default-gateway {gateway}\n")
     dhcp_settings.append(f"        set netmask {netmask}\n")
-    dhcp_settings.append(f"        set interface {vlan_name}\n")
-    if dns_servers:
+    dhcp_settings.append(f"        set interface \"{vlan_int}\"\n")
+    if dns_servers == "upstream_dns":
+        dhcp_settings.append("        set dns-service default\n")
+    else:
         dns_servers = dns_servers.split("\n")
         for count, server in enumerate(dns_servers):
             dhcp_settings.append(f"        set dns-server{count+1} {server}\n")
-    else:
-        dhcp_settings.append("        set dns-service default\n")
     dhcp_settings.append("        config ip-range\n")
     dhcp_settings.append("            edit 1\n")
     dhcp_settings.append(f"               set start-ip {vlan_subnet[0]}\n")
@@ -201,7 +241,7 @@ def main():
                     dhcp.append(item)
                 dhcp.append("    next\n")
         dhcp.append("end\n")
-        fileops.append_to_file('dhcp1.txt', dhcp)
+        fileops.append_to_file('tax-dhcp.txt', dhcp)
     else:
         single_network = dashboard.appliance.getNetworkApplianceSingleLan(network[0])
         print("Vlans are not enabled")
