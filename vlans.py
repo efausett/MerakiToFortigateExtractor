@@ -163,28 +163,30 @@ def main():
     org_id, org_name = merakiops.select_organization(dashboard)
     network = merakiops.select_network(dashboard, org_id)
     # Find VLAN settings, handle case where vlans aren't enabled
-    dhcp_settings = []
-    output = []
-    vlan_list = []
+    filename = network[1] + ".cfg"
     dhcp = []
+    interface_config = []
     count = 10
     if dashboard.appliance.getNetworkApplianceVlansSettings(network[0])["vlansEnabled"]:
         vlans = dashboard.appliance.getNetworkApplianceVlans(network[0])
         dhcp.append("config system dhcp server\n")
-        
+        interface_config.append("config system interface\n")
         for vlan in vlans:
             name = vlan["name"]
             vlan_id = vlan["id"]
             subnet = vlan["subnet"]
+            netmask = ipaddress.ip_network(subnet).netmask
             assigned_ip = vlan["applianceIp"]
             dhcp_handling = vlan["dhcpHandling"]
-            try:
-                group_policy = vlan["groupPolicyId"]
-            except KeyError:
-                group_policy = ''
-            values = name + "," + str(vlan_id) + "," + subnet + "," + assigned_ip + "," + dhcp_handling + "," + group_policy + "\n"
-            vlan_list.append(values)
-            #
+            interface_config.append(f"    edit Vlan_{vlan_id}\n")
+            interface_config.append("        set vdom root\n")
+            interface_config.append(f"        set alias {name}\n")
+            interface_config.append(f"        set ip {assigned_ip} {netmask}\n")
+            interface_config.append("        set allowaccess ping\n")
+            interface_config.append("        set role lan\n")
+            interface_config.append("        set interface \"internal1\"\n")
+            interface_config.append(f"        set vlanid {vlan_id}\n")
+            interface_config.append(f"    next\n")
             if "Run" in dhcp_handling:
                 count += 1
                 dhcp.append(f"    edit {count}\n")
@@ -193,15 +195,14 @@ def main():
                     dhcp.append(item)
                 dhcp.append("    next\n")
         dhcp.append("end\n")
-        fileops.append_to_file('tax-dhcp.txt', dhcp)
+        #fileops.append_to_file('tax-dhcp.txt', dhcp)
+        interface_config.append("end\n")
+        interface_config.extend(dhcp)
+        fileops.writelines_to_file(filename, interface_config)
     else:
         single_network = dashboard.appliance.getNetworkApplianceSingleLan(network[0])
         print("Vlans are not enabled")
         print(f"The single subnet is {single_network['subnet']}")
-    for each in dhcp_settings:
-        output.append(each)
-
-    fileops.writelines_to_file('vlans.txt', vlan_list)
 
 
 if __name__ == '__main__':
