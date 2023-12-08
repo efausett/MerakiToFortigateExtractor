@@ -1,6 +1,17 @@
-"""Convers Meraki DHCP settings to a FortiGate config"""
+"""Converts Meraki Vlan and DHCP settings to a FortiGate config"""
+
+# TODO: Add DHCP relay
+# TODO: Add lease time options
+
+# Requires:
+#  - pip install meraki
+
+# What vlans exist?
+#  - 
+
 
 import ipaddress
+import sys
 
 from mytools import fileops, merakiops
 
@@ -9,8 +20,8 @@ def cleanse_the_data(exclude_list, fixed_list):
     for fixed_ip in fixed_list.values():
         search_ip = ipaddress.ip_address(fixed_ip["ip"])
         for count, each in enumerate(exclude_list):
-            start_ip = ipaddress.ip_address(each['start'])
-            end_ip = ipaddress.ip_address(each['end'])
+            start_ip = ipaddress.ip_address(each["start"])
+            end_ip = ipaddress.ip_address(each["end"])
             # Test for fixed ip found in exclude list
             if search_ip >= start_ip and search_ip <= end_ip:
                 # Remove from excluded list
@@ -19,16 +30,18 @@ def cleanse_the_data(exclude_list, fixed_list):
                     continue
                 if search_ip == start_ip:
                     new_start_ip = start_ip + 1
-                    exclude_list[count]['start'] = str(new_start_ip)
+                    exclude_list[count]["start"] = str(new_start_ip)
                 if search_ip == end_ip:
                     new_end_ip = end_ip - 1
-                    exclude_list[count]['end'] = str(new_end_ip)
+                    exclude_list[count]["end"] = str(new_end_ip)
                 # Need to make two new ranges that don't include given IP
                 new_end_ip = search_ip - 1
-                exclude_list[count]['end'] = str(new_end_ip)
+                exclude_list[count]["end"] = str(new_end_ip)
                 # Now add another item to list for the new start to end
                 new_start_ip = search_ip + 1
-                exclude_list.insert(count, {'start': new_start_ip, 'end': end_ip, 'comment': ''})
+                exclude_list.insert(
+                    count, {"start": new_start_ip, "end": end_ip, "comment": ""}
+                )
     return exclude_list
 
 
@@ -39,12 +52,12 @@ def format_fixed_addresses(vlan_name, fixed_data):
         client_mac = fixed_ip
         client_ip = fixed_data[fixed_ip]["ip"]
         if not client_name:
-            client_name = ''
-        fixed.append(f'            edit {count}\n')
-        fixed.append(f'                set ip {client_ip}\n')
-        fixed.append(f'                set mac {client_mac}\n')
-        fixed.append(f'                set description \"{client_name}\"\n')
-        fixed.append(f'            next\n')
+            client_name = ""
+        fixed.append(f"            edit {count}\n")
+        fixed.append(f"                set ip {client_ip}\n")
+        fixed.append(f"                set mac {client_mac}\n")
+        fixed.append(f'                set description "{client_name}"\n')
+        fixed.append(f"            next\n")
     fixed.append("        end\n")
     fixed_file = vlan_name + "_fixed"
     return fixed
@@ -56,10 +69,10 @@ def format_reserved_addresses(vlan_name, reserved_data):
         start_ip = each["start"]
         end_ip = each["end"]
         comment = each["comment"]
-        reserved.append(f'            edit {count}\n')
+        reserved.append(f"            edit {count}\n")
         reserved.append(f"                set start-ip {start_ip}\n")
         reserved.append(f"                set end-ip {end_ip}\n")
-        reserved.append(f'            next\n')
+        reserved.append(f"            next\n")
     reserved.append("        end\n")
     reserved_file = vlan_name + "_reserved"
     return reserved
@@ -68,7 +81,7 @@ def format_reserved_addresses(vlan_name, reserved_data):
 def extract_domain_name(options):
     domain_name = ""
     for option in options:
-        if option["code"] == '15':
+        if option["code"] == "15":
             domain_name = option["value"]
     return domain_name
 
@@ -78,11 +91,11 @@ def extract_option_150(options):
     ips = ["        config options\n"]
     new_value = ""
     for option in options:
-        if option["code"] == '150':
+        if option["code"] == "150":
             ips.append(f"            edit {count}\n")
             ips.append(f"                set code {option['code']}\n")
             ips.append(f"                set type {option['type']}\n")
-            opt = option['value'].split(",")
+            opt = option["value"].split(",")
             for each_ip in opt:
                 quoted_ip = f'"{each_ip.strip()}"'
                 new_value += quoted_ip + " "
@@ -135,7 +148,7 @@ def parse_dhcp_settings(vlan_data):
         dhcp_settings.append(f"        set domain {domain_name}\n")
     dhcp_settings.append(f"        set default-gateway {gateway}\n")
     dhcp_settings.append(f"        set netmask {netmask}\n")
-    dhcp_settings.append(f"        set interface \"{vlan_int}\"\n")
+    dhcp_settings.append(f'        set interface "{vlan_int}"\n')
     if dns_servers == "upstream_dns":
         dhcp_settings.append("        set dns-service default\n")
     else:
@@ -158,10 +171,15 @@ def parse_dhcp_settings(vlan_data):
     return dhcp_settings
 
 
-def main():
-    dashboard = merakiops.get_dashboard()
-    org_id, org_name = merakiops.select_organization(dashboard)
-    network = merakiops.select_network(dashboard, org_id)
+def process_vlans(dashboard, network):
+    # Confirm that the specified network has an appliance or exit
+    devices = dashboard.networks.getNetworkDevices(network[0])
+    mx_found = False
+    for device in devices:
+        if "MX" in device["model"]:
+            mx_found = True
+    if not mx_found:
+        sys.exit(f"The selected network {network[1]} does not have an MX appliance")
     # Find VLAN settings, handle case where vlans aren't enabled
     filename = network[1] + ".cfg"
     dhcp = []
@@ -180,13 +198,14 @@ def main():
             dhcp_handling = vlan["dhcpHandling"]
             interface_config.append(f"    edit Vlan_{vlan_id}\n")
             interface_config.append("        set vdom root\n")
-            interface_config.append(f"        set alias {name}\n")
+            interface_config.append(f'        set alias "{name}"\n')
             interface_config.append(f"        set ip {assigned_ip} {netmask}\n")
             interface_config.append("        set allowaccess ping\n")
             interface_config.append("        set role lan\n")
-            interface_config.append("        set interface \"internal1\"\n")
+            interface_config.append('        set interface "internal1"\n')
             interface_config.append(f"        set vlanid {vlan_id}\n")
             interface_config.append(f"    next\n")
+            # Handle case where there is DHCP Relay
             if "Run" in dhcp_handling:
                 count += 1
                 dhcp.append(f"    edit {count}\n")
@@ -195,7 +214,6 @@ def main():
                     dhcp.append(item)
                 dhcp.append("    next\n")
         dhcp.append("end\n")
-        #fileops.append_to_file('tax-dhcp.txt', dhcp)
         interface_config.append("end\n")
         interface_config.extend(dhcp)
         fileops.writelines_to_file(filename, interface_config)
@@ -205,5 +223,12 @@ def main():
         print(f"The single subnet is {single_network['subnet']}")
 
 
-if __name__ == '__main__':
+def main():
+    dashboard = merakiops.get_dashboard()
+    org_id = merakiops.select_organization(dashboard)
+    network = merakiops.select_network(dashboard, org_id[0])
+    process_vlans(dashboard, network)
+
+
+if __name__ == "__main__":
     main()
