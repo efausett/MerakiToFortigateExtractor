@@ -1,22 +1,38 @@
 """Converts Meraki Vlan and DHCP settings to a FortiGate config"""
 
-# TODO: Add DHCP relay
-# TODO: Add lease time options
-
-# Requires:
-#  - pip install meraki
-
-# What vlans exist?
-#  - 
-
-
 import ipaddress
+import logging
 import sys
+from datetime import datetime
+from pathlib import Path
 
 from mytools import fileops, merakiops
 
 
+# Setup logging
+logs_path = "output/logs/"
+# Check that specified path exists or create
+if not Path(logs_path).exists():
+    Path(logs_path).mkdir(parents=True, exist_ok=True)
+this_file = Path(__file__).stem
+time_stamp = datetime.now().strftime("__%Y-%m-%d_%H-%M-%S")
+logname = this_file + time_stamp + ".log"
+try:
+    logging.basicConfig(
+        filename=f"output/logs/{logname}",
+        encoding="utf-8",
+        level=logging.DEBUG,
+        format=(
+            "%(asctime)2s %(filename)14s:%(lineno)s "
+            "%(levelname)11s > %(message)s"),
+        datefmt="%m/%d/%Y %I:%M:%S %p",
+    )
+except (FileNotFoundError, PermissionError) as e:
+    sys.exit(f'Unable to write logs to file due to "{e.args[1]}"')
+
+
 def cleanse_the_data(exclude_list, fixed_list):
+    logging.info("The cleanse_the_data function has been called")
     for fixed_ip in fixed_list.values():
         search_ip = ipaddress.ip_address(fixed_ip["ip"])
         for count, each in enumerate(exclude_list):
@@ -46,6 +62,7 @@ def cleanse_the_data(exclude_list, fixed_list):
 
 
 def format_fixed_addresses(vlan_name, fixed_data):
+    logging.info("The format_fixed_addresses function has been called")
     fixed = ["        config reserved-address\n"]
     for count, fixed_ip in enumerate(fixed_data, start=1):
         client_name = fixed_data[fixed_ip]["name"]
@@ -64,6 +81,7 @@ def format_fixed_addresses(vlan_name, fixed_data):
 
 
 def format_reserved_addresses(vlan_name, reserved_data):
+    logging.info("The format_reserved_addresses function has been called")
     reserved = ["        config exclude-range\n"]
     for count, each in enumerate(reserved_data, start=1):
         start_ip = each["start"]
@@ -79,6 +97,7 @@ def format_reserved_addresses(vlan_name, reserved_data):
 
 
 def extract_domain_name(options):
+    logging.info("The extract_domain_name function has been called")
     domain_name = ""
     for option in options:
         if option["code"] == "15":
@@ -87,6 +106,7 @@ def extract_domain_name(options):
 
 
 def extract_option_150(options):
+    logging.info("The extract_option_150 function has been called")
     count = 1
     ips = ["        config options\n"]
     new_value = ""
@@ -109,7 +129,25 @@ def extract_option_150(options):
         return []
 
 
+def match_lease_time(lease):
+    logging.info("The match_lease_time function has been called")
+    match lease:
+        case "30 minutes":
+            return "1800"
+        case "1 hour":
+            return "3600"
+        case "4 hours":
+            return "14400"
+        case "12 hours":
+            return "43200"
+        case "1 day":
+            return "86400"
+        case "1 week":
+            return "604800"
+
+
 def parse_dhcp_settings(vlan_data):
+    logging.info("The parse_dhcp_settings function has been called")
     dhcp_settings = []
     excluded = []
     excluded_list = []
@@ -123,6 +161,7 @@ def parse_dhcp_settings(vlan_data):
     vlan_int = "Vlan_" + str(vlan_id)
     mandatory = vlan_data["mandatoryDhcp"]
     lease_time = vlan_data["dhcpLeaseTime"]
+    lease_time_int = match_lease_time(lease_time)
     dns_servers = vlan_data["dnsNameservers"]
     boot_options = vlan_data["dhcpBootOptionsEnabled"]
     dhcp_options = vlan_data["dhcpOptions"]
@@ -149,6 +188,7 @@ def parse_dhcp_settings(vlan_data):
     dhcp_settings.append(f"        set default-gateway {gateway}\n")
     dhcp_settings.append(f"        set netmask {netmask}\n")
     dhcp_settings.append(f'        set interface "{vlan_int}"\n')
+    dhcp_settings.append(f'        set lease-time {lease_time_int}\n')
     if dns_servers == "upstream_dns":
         dhcp_settings.append("        set dns-service default\n")
     else:
@@ -172,61 +212,105 @@ def parse_dhcp_settings(vlan_data):
 
 
 def process_vlans(dashboard, network):
+    logging.debug("The process_vlans function has been called")
     # Confirm that the specified network has an appliance or exit
     devices = dashboard.networks.getNetworkDevices(network[0])
     mx_found = False
     for device in devices:
         if "MX" in device["model"]:
+            logging.info(f"Found a Meraki {device['model']}")
             mx_found = True
     if not mx_found:
+        logging.info("No MX appliance was found for specified network")
         sys.exit(f"The selected network {network[1]} does not have an MX appliance")
-    # Find VLAN settings, handle case where vlans aren't enabled
-    filename = network[1] + ".cfg"
-    dhcp = []
-    interface_config = []
+    # Check if Vlans are enabled and if not exit
+    if not dashboard.appliance.getNetworkApplianceVlansSettings(network[0])["vlansEnabled"]:
+        logging.info("Vlans are not enabled for the specified network")
+        single_network = dashboard.appliance.getNetworkApplianceSingleLan(network[0])
+        print(f"Vlans are not enabled for {network[1]}")
+        sys.exit(f"The single subnet is {single_network['subnet']}")
+    # When Vlans are enabled extract dhcp and interface settings
+    filename = "output/configs/" + network[1] + ".cfg"
+    dhcp = ["config system dhcp server\n"]
+    interface_config = ["config system interface\n"]
+    bgp_config = ["config router bgp\n", "    config network\n"]
+    route_map = ["config router prefix-list\n", "    edit LAN1\n", "        config rule\n"]
+    found_dhcp = False
+    # TODO: Pull existing fortigate settings to know where to start
+    # Start at 10 to avoid conflicts with existing fortigate settings
     count = 10
-    if dashboard.appliance.getNetworkApplianceVlansSettings(network[0])["vlansEnabled"]:
-        vlans = dashboard.appliance.getNetworkApplianceVlans(network[0])
-        dhcp.append("config system dhcp server\n")
-        interface_config.append("config system interface\n")
-        for vlan in vlans:
-            name = vlan["name"]
-            vlan_id = vlan["id"]
-            subnet = vlan["subnet"]
-            netmask = ipaddress.ip_network(subnet).netmask
-            assigned_ip = vlan["applianceIp"]
-            dhcp_handling = vlan["dhcpHandling"]
-            interface_config.append(f"    edit Vlan_{vlan_id}\n")
-            interface_config.append("        set vdom root\n")
-            interface_config.append(f'        set alias "{name}"\n')
-            interface_config.append(f"        set ip {assigned_ip} {netmask}\n")
-            interface_config.append("        set allowaccess ping\n")
-            interface_config.append("        set role lan\n")
-            interface_config.append('        set interface "internal1"\n')
-            interface_config.append(f"        set vlanid {vlan_id}\n")
-            interface_config.append(f"    next\n")
-            # Handle case where there is DHCP Relay
-            if "Run" in dhcp_handling:
-                count += 1
-                dhcp.append(f"    edit {count}\n")
-                dhcp_parsed = parse_dhcp_settings(vlan)
-                for item in dhcp_parsed:
-                    dhcp.append(item)
-                dhcp.append("    next\n")
+    vlans = dashboard.appliance.getNetworkApplianceVlans(network[0])
+    for vlan in vlans:
+        name = vlan["name"]
+        logging.info(f"Processing vlan {name}")
+        vlan_id = vlan["id"]
+        subnet = vlan["subnet"]
+        netmask = ipaddress.ip_network(subnet).netmask
+        assigned_ip = vlan["applianceIp"]
+        interface_config.append(f"    edit Vlan_{vlan_id}\n")
+        interface_config.append("        set vdom root\n")
+        interface_config.append(f'        set alias "{name}"\n')
+        interface_config.append(f"        set ip {assigned_ip} {netmask}\n")
+        interface_config.append("        set allowaccess ping\n")
+        interface_config.append("        set role lan\n")
+        interface_config.append('        set interface "internal1"\n')
+        interface_config.append(f"        set vlanid {vlan_id}\n")
+        bgp_config.append(f"        edit {count}\n")
+        bgp_config.append(f"            set prefix {subnet}\n")
+        bgp_config.append("        next\n")
+        route_map.append(f"            edit {count}\n")
+        route_map.append(f"                set prefix {subnet}\n")
+        route_map.append(f"                unset ge\n")
+        route_map.append(f"                unset le\n")
+        route_map.append("            next\n")
+        dhcp_handling = vlan["dhcpHandling"]
+        # Handle case where "Run a DHCP server" is selected
+        if "Run" in dhcp_handling:
+            found_dhcp = True
+            logging.info(f"Vlan {name} has DHCP settings enabled")
+            count += 1
+            dhcp.append(f"    edit {count}\n")
+            dhcp_parsed = parse_dhcp_settings(vlan)
+            for item in dhcp_parsed:
+                dhcp.append(item)
+            dhcp.append("    next\n")
+        # Handle case where "Relay DHCP to another server" is selected
+        if "Relay" in dhcp_handling:
+            logging.info(f"Vlan {name} has a DHCP relay configured")
+            relay_servers = vlan["dhcpRelayServerIps"]
+            interface_config.append("        set dhcp-relay-service enable\n")
+            interface_config.append(f"        set dhcp-relay-ip {' '.join(relay_servers)}\n")
+        interface_config.append(f"    next\n")
+    # Only append DHCP if it was enabled
+    if found_dhcp:
+        logging.info("Processing dhcp settings")
         dhcp.append("end\n")
         interface_config.append("end\n")
+        bgp_config.append("    end\n")
+        bgp_config.append("end\n")
+        route_map.append("        end\n")
+        route_map.append("    next\n")
+        route_map.append("end\n")
         interface_config.extend(dhcp)
-        fileops.writelines_to_file(filename, interface_config)
+        interface_config.extend(bgp_config)
+        interface_config.extend(route_map)
     else:
-        single_network = dashboard.appliance.getNetworkApplianceSingleLan(network[0])
-        print("Vlans are not enabled")
-        print(f"The single subnet is {single_network['subnet']}")
+        interface_config.append("end\n")
+        bgp_config.append("    end\n")
+        bgp_config.append("end\n")
+        route_map.append("        end\n")
+        route_map.append("    next\n")
+        route_map.append("end\n")
+        interface_config.extend(bgp_config)
+        interface_config.extend(route_map)
+    fileops.writelines_to_file(filename, interface_config)
 
 
 def main():
     dashboard = merakiops.get_dashboard()
     org_id = merakiops.select_organization(dashboard)
     network = merakiops.select_network(dashboard, org_id[0])
+    logging.info(f"Network {network[1]} from organization {org_id[1] } has been selected")
     process_vlans(dashboard, network)
 
 
