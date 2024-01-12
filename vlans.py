@@ -23,8 +23,8 @@ try:
         encoding="utf-8",
         level=logging.DEBUG,
         format=(
-            "%(asctime)2s %(filename)14s:%(lineno)s "
-            "%(levelname)11s > %(message)s"),
+            "%(asctime)2s %(filename)14s:%(lineno)s " "%(levelname)11s > %(message)s"
+        ),
         datefmt="%m/%d/%Y %I:%M:%S %p",
     )
 except (FileNotFoundError, PermissionError) as e:
@@ -188,7 +188,7 @@ def parse_dhcp_settings(vlan_data):
     dhcp_settings.append(f"        set default-gateway {gateway}\n")
     dhcp_settings.append(f"        set netmask {netmask}\n")
     dhcp_settings.append(f'        set interface "{vlan_int}"\n')
-    dhcp_settings.append(f'        set lease-time {lease_time_int}\n')
+    dhcp_settings.append(f"        set lease-time {lease_time_int}\n")
     if dns_servers == "upstream_dns":
         dhcp_settings.append("        set dns-service default\n")
     else:
@@ -224,7 +224,9 @@ def process_vlans(dashboard, network):
         logging.info("No MX appliance was found for specified network")
         sys.exit(f"The selected network {network[1]} does not have an MX appliance")
     # Check if Vlans are enabled and if not exit
-    if not dashboard.appliance.getNetworkApplianceVlansSettings(network[0])["vlansEnabled"]:
+    if not dashboard.appliance.getNetworkApplianceVlansSettings(network[0])[
+        "vlansEnabled"
+    ]:
         logging.info("Vlans are not enabled for the specified network")
         single_network = dashboard.appliance.getNetworkApplianceSingleLan(network[0])
         print(f"Vlans are not enabled for {network[1]}")
@@ -234,7 +236,11 @@ def process_vlans(dashboard, network):
     dhcp = ["config system dhcp server\n"]
     interface_config = ["config system interface\n"]
     bgp_config = ["config router bgp\n", "    config network\n"]
-    route_map = ["config router prefix-list\n", "    edit LAN1\n", "        config rule\n"]
+    route_map = [
+        "config router prefix-list\n",
+        "    edit LAN1\n",
+        "        config rule\n",
+    ]
     found_dhcp = False
     # TODO: Pull existing fortigate settings to know where to start
     # Start at 10 to avoid conflicts with existing fortigate settings
@@ -279,7 +285,9 @@ def process_vlans(dashboard, network):
             logging.info(f"Vlan {name} has a DHCP relay configured")
             relay_servers = vlan["dhcpRelayServerIps"]
             interface_config.append("        set dhcp-relay-service enable\n")
-            interface_config.append(f"        set dhcp-relay-ip {' '.join(relay_servers)}\n")
+            interface_config.append(
+                f"        set dhcp-relay-ip {' '.join(relay_servers)}\n"
+            )
         interface_config.append(f"    next\n")
     # Only append DHCP if it was enabled
     if found_dhcp:
@@ -308,9 +316,9 @@ def process_vlans(dashboard, network):
 
 def main():
     dashboard = merakiops.get_dashboard()
-    org_id = merakiops.select_organization(dashboard)
-    network = merakiops.select_network(dashboard, org_id[0])
-    logging.info(f"Network {network[1]} from organization {org_id[1] } has been selected")
+    org = merakiops.select_organization(dashboard)
+    network = merakiops.select_network(dashboard, org[0])
+    logging.info(f"Network {network[1]} from organization {org[1] } has been selected")
     process_vlans(dashboard, network)
 
 
