@@ -225,6 +225,7 @@ def process_vlans(dashboard, network):
         logging.info("No MX appliance was found for specified network")
         sys.exit(f"The selected network {network[1]} does not have an MX appliance")
 
+
     # Check if Vlans are enabled and if not exit
     if not dashboard.appliance.getNetworkApplianceVlansSettings(network[0])[
         "vlansEnabled"
