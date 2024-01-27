@@ -1,5 +1,3 @@
-"""Converts Meraki Vlan and DHCP settings to a FortiGate config"""
-
 import ipaddress
 import logging
 import sys
@@ -212,10 +210,13 @@ def parse_dhcp_settings(vlan_data):
 
 
 def process_vlans(dashboard, network):
+
     logging.debug("The process_vlans function has been called")
+
     # Confirm that the specified network has an appliance or exit
     devices = dashboard.networks.getNetworkDevices(network[0])
     mx_found = False
+
     for device in devices:
         if "MX" in device["model"]:
             logging.info(f"Found a Meraki {device['model']}")
@@ -223,6 +224,7 @@ def process_vlans(dashboard, network):
     if not mx_found:
         logging.info("No MX appliance was found for specified network")
         sys.exit(f"The selected network {network[1]} does not have an MX appliance")
+
     # Check if Vlans are enabled and if not exit
     if not dashboard.appliance.getNetworkApplianceVlansSettings(network[0])[
         "vlansEnabled"
@@ -231,6 +233,7 @@ def process_vlans(dashboard, network):
         single_network = dashboard.appliance.getNetworkApplianceSingleLan(network[0])
         print(f"Vlans are not enabled for {network[1]}")
         sys.exit(f"The single subnet is {single_network['subnet']}")
+
     # When Vlans are enabled extract dhcp and interface settings
     filename = "output/configs/" + network[1] + ".cfg"
     dhcp = ["config system dhcp server\n"]
@@ -242,10 +245,13 @@ def process_vlans(dashboard, network):
         "        config rule\n",
     ]
     found_dhcp = False
+
     # TODO: Pull existing fortigate settings to know where to start
     # Start at 10 to avoid conflicts with existing fortigate settings
     count = 10
     vlans = dashboard.appliance.getNetworkApplianceVlans(network[0])
+
+    # Loop to convert Meraki variables into FortiGate format.
     for vlan in vlans:
         name = vlan["name"]
         logging.info(f"Processing vlan {name}")
@@ -270,7 +276,8 @@ def process_vlans(dashboard, network):
         route_map.append(f"                unset le\n")
         route_map.append("            next\n")
         dhcp_handling = vlan["dhcpHandling"]
-        # Handle case where "Run a DHCP server" is selected
+
+        # Handle case where "Run a DHCP server" is selected.
         if "Run" in dhcp_handling:
             found_dhcp = True
             logging.info(f"Vlan {name} has DHCP settings enabled")
@@ -280,7 +287,8 @@ def process_vlans(dashboard, network):
             for item in dhcp_parsed:
                 dhcp.append(item)
             dhcp.append("    next\n")
-        # Handle case where "Relay DHCP to another server" is selected
+
+        # Handle case where "Relay DHCP to another server" is selected.
         if "Relay" in dhcp_handling:
             logging.info(f"Vlan {name} has a DHCP relay configured")
             relay_servers = vlan["dhcpRelayServerIps"]
@@ -289,7 +297,8 @@ def process_vlans(dashboard, network):
                 f"        set dhcp-relay-ip {' '.join(relay_servers)}\n"
             )
         interface_config.append(f"    next\n")
-    # Only append DHCP if it was enabled
+        
+    # If DHCP is enabled, convert DHCP settings to FortiGate format.
     if found_dhcp:
         logging.info("Processing dhcp settings")
         dhcp.append("end\n")
@@ -313,6 +322,10 @@ def process_vlans(dashboard, network):
         interface_config.extend(route_map)
     fileops.writelines_to_file(filename, interface_config)
 
+
+ # Connect to Meraki dashboard.
+ # User selects organization and network.
+ # Once user gives input config is created in output file.
 
 def main():
     dashboard = merakiops.get_dashboard()
