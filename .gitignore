@@ -55,6 +55,10 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Settings & Config Files:
+input/
+output/
+
 # Translations
 *.mo
 *.pot
