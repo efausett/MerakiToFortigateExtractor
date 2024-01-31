@@ -1,6 +1,7 @@
 import ipaddress
 import logging
 import sys
+
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,7 @@ def cleanse_the_data(exclude_list, fixed_list):
         for count, each in enumerate(exclude_list):
             start_ip = ipaddress.ip_address(each["start"])
             end_ip = ipaddress.ip_address(each["end"])
+
             # Test for fixed ip found in exclude list
             if search_ip >= start_ip and search_ip <= end_ip:
                 # Remove from excluded list
@@ -105,9 +107,11 @@ def extract_domain_name(options):
 
 def extract_option_150(options):
     logging.info("The extract_option_150 function has been called")
+
     count = 1
     ips = ["        config options\n"]
     new_value = ""
+
     for option in options:
         if option["code"] == "150":
             ips.append(f"            edit {count}\n")
@@ -121,6 +125,7 @@ def extract_option_150(options):
             ips.append("            next\n")
             count += 1
     ips.append("        end\n")
+
     if count > 1:
         return ips
     else:
@@ -142,16 +147,47 @@ def match_lease_time(lease):
             return "86400"
         case "1 week":
             return "604800"
+        case _:
+            # Default case to catch an invalid input
+            logging.warning(f"The specified lease time {lease} is not valid")
+            raise ValueError("The specified lease time has not been defined")
+
+
+def parse_dhcp_options(options):
+    all_options = {"dn": "", "ip_list": []}
+    for option in options:
+        if option["code"] == "15" and option["type"] == "text":
+            try:
+                fileops.validate_domain(option["value"])
+            except ValueError:
+                all_options["dn"] = "Error"
+            else:
+                all_options["dn"] = option["value"]
+        elif option["code"] == "150" and option["type"] == "ip":
+            ips = option["value"].split(",")
+            for ip in ips:
+                try:
+                    ipaddress.ip_address(ip.strip())
+                except ValueError:
+                    all_options["ip_list"].append("Error")
+                else:
+                    all_options["ip_list"].append(ip.strip())
+        else:
+            raise TypeError("Unknown code provided")
+    return all_options
 
 
 def parse_dhcp_settings(vlan_data):
     logging.info("The parse_dhcp_settings function has been called")
+
+    # Create variables for DHCP settings.
     dhcp_settings = []
     excluded = []
     excluded_list = []
     fixed = []
     options = None
     dns_servers = ""
+    opt_15 = ""
     opt_150 = []
     new_excluded_list = []
     vlan_name = vlan_data["name"]
@@ -162,50 +198,79 @@ def parse_dhcp_settings(vlan_data):
     lease_time_int = match_lease_time(lease_time)
     dns_servers = vlan_data["dnsNameservers"]
     boot_options = vlan_data["dhcpBootOptionsEnabled"]
+
+    # Domain name test.
+    if vlan_data["dhcpOptions"]:
+        options = parse_dhcp_options(vlan_data["dhcpOptions"])
+        if options["dn"]:
+            opt_15 = options["dn"]
+            if opt_15 == "Error":
+                print(f"DHCP option 15 for Vlan ID {vlan_id} is invalid")
+                opt_15 = ""
+        if options["ip_list"]:
+            opt_150 = " ".join(options["ip_list"])
+
     dhcp_options = vlan_data["dhcpOptions"]
     reserved_ips = vlan_data["reservedIpRanges"]
     fixed_ips = vlan_data["fixedIpAssignments"]
+
     if reserved_ips and fixed_ips:
         new_excluded_list = cleanse_the_data(reserved_ips, fixed_ips)
+
     if fixed_ips:
         fixed = format_fixed_addresses(vlan_name, fixed_ips)
+
     if new_excluded_list:
         excluded = format_reserved_addresses(vlan_name, new_excluded_list)
     else:
         excluded = format_reserved_addresses(vlan_name, reserved_ips)
+
     if dhcp_options:
         options = extract_domain_name(dhcp_options)
         opt_150 = extract_option_150(dhcp_options)
+
     domain_name = options or ""
     gateway = vlan_data["applianceIp"]
     subnet = vlan_data["subnet"]
     vlan_subnet = list(ipaddress.ip_network(subnet).hosts())
     netmask = ipaddress.ip_network(subnet).netmask
-    if domain_name:
-        dhcp_settings.append(f"        set domain {domain_name}\n")
+
+    if opt_15:
+        dhcp_settings.append(f"        set domain {opt_15}\n")
+
     dhcp_settings.append(f"        set default-gateway {gateway}\n")
     dhcp_settings.append(f"        set netmask {netmask}\n")
     dhcp_settings.append(f'        set interface "{vlan_int}"\n')
     dhcp_settings.append(f"        set lease-time {lease_time_int}\n")
+    
     if dns_servers == "upstream_dns":
         dhcp_settings.append("        set dns-service default\n")
     else:
         dns_servers = dns_servers.split("\n")
         for count, server in enumerate(dns_servers):
             dhcp_settings.append(f"        set dns-server{count+1} {server}\n")
+
     dhcp_settings.append("        config ip-range\n")
     dhcp_settings.append("            edit 1\n")
     dhcp_settings.append(f"               set start-ip {vlan_subnet[0]}\n")
     dhcp_settings.append(f"               set end-ip {vlan_subnet[-1]}\n")
     dhcp_settings.append("            next\n")
     dhcp_settings.append("        end\n")
+
     for exclude in excluded:
         dhcp_settings.append(exclude)
+
     for fix in fixed:
         dhcp_settings.append(fix)
+
     if opt_150:
-        for opt in opt_150:
-            dhcp_settings.append(opt)
+        dhcp_settings.append("        config options\n")
+        dhcp_settings.append("            edit 1\n")
+        dhcp_settings.append("                set code 150\n")
+        dhcp_settings.append("                set type ip\n")
+        dhcp_settings.append(f"                set ip {opt_150}\n")
+        dhcp_settings.append("            next\n")
+        dhcp_settings.append("        end\n")
     return dhcp_settings
 
 
@@ -216,6 +281,12 @@ def process_vlans(dashboard, network):
     # Confirm that the specified network has an appliance or exit
     devices = dashboard.networks.getNetworkDevices(network[0])
     mx_found = False
+
+    settings = fileops.load_settings("input/settings.toml")
+
+    interface = settings["vlans"]["interface"]
+
+    print(interface)
 
     for device in devices:
         if "MX" in device["model"]:
@@ -252,6 +323,8 @@ def process_vlans(dashboard, network):
     count = 10
     vlans = dashboard.appliance.getNetworkApplianceVlans(network[0])
 
+    print(vlans)
+
     # Loop to convert Meraki variables into FortiGate format.
     for vlan in vlans:
         name = vlan["name"]
@@ -266,8 +339,11 @@ def process_vlans(dashboard, network):
         interface_config.append(f"        set ip {assigned_ip} {netmask}\n")
         interface_config.append("        set allowaccess ping\n")
         interface_config.append("        set role lan\n")
-        interface_config.append('        set interface "internal1"\n')
+
+        # Set interface.
+        interface_config.append(f'        set interface "{interface}"\n')
         interface_config.append(f"        set vlanid {vlan_id}\n")
+        interface_config.append("        set status up\n")
         bgp_config.append(f"        edit {count}\n")
         bgp_config.append(f"            set prefix {subnet}\n")
         bgp_config.append("        next\n")
@@ -322,7 +398,6 @@ def process_vlans(dashboard, network):
         interface_config.extend(bgp_config)
         interface_config.extend(route_map)
     fileops.writelines_to_file(filename, interface_config)
-
 
  # Connect to Meraki dashboard.
  # User selects organization and network.

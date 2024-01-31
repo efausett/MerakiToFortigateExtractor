@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MerakiToFortinetConverter"
+version = "0.0.1"
+
+[project.scripts]
+convert-meraki = "vlans:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
