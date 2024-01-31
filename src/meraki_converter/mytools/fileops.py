@@ -1,63 +1,64 @@
-'''File operations'''
+"""File operations"""
 
-import sys
-import platform
-import os
-import re
 import json
+import os
+import platform
+import re
+import sys
+
 import tomlkit
 
 
 def writelines_to_file(filename, filedata):
     # Write text to given path
     try:
-        with open(filename, 'w', encoding='utf-8') as file_data:
+        with open(filename, "w", encoding="utf-8") as file_data:
             file_data.writelines(filedata)
     except FileNotFoundError:
-        sys.exit('Error opening file')
+        sys.exit("Error opening file")
 
 
 def append_to_file(filename, filedata):
     # Write text to given path
     try:
-        with open(filename, 'a', encoding='utf-8') as file_data:
+        with open(filename, "a", encoding="utf-8") as file_data:
             file_data.writelines(filedata)
     except FileNotFoundError:
-        sys.exit('Error opening file')
+        sys.exit("Error opening file")
 
 
 def progress_bar(progress, total, width=40):
     char = chr(9632)
     if progress >= total:
-        fill_char = colorme(char, 'green')
+        fill_char = colorme(char, "green")
     else:
-        fill_char = colorme(char, 'red')
+        fill_char = colorme(char, "red")
     completed = int(width * (progress / total))
-    bar = 'Progress: [' + fill_char * completed + '-' * (width - completed) + '] '
+    bar = "Progress: [" + fill_char * completed + "-" * (width - completed) + "] "
     percent_done = round(progress / total * 100, 1)
-    bar += str(percent_done) + '% ' + str(progress) + '/' + str(total)
+    bar += str(percent_done) + "% " + str(progress) + "/" + str(total)
     return bar
 
 
 def clear_screen():
-    if(platform.system().lower()=='windows'):
-        cmd = 'cls'
+    if platform.system().lower() == "windows":
+        cmd = "cls"
     else:
-        cmd = 'clear'
+        cmd = "clear"
     os.system(cmd)
 
 
 def colorme(msg, color):
-    if color == 'red':
-        wrapper = '\033[91m'
-    elif color == 'blue':
-        wrapper = '\033[94m'
-    elif color == 'green':
-        wrapper = '\033[92m'
+    if color == "red":
+        wrapper = "\033[91m"
+    elif color == "blue":
+        wrapper = "\033[94m"
+    elif color == "green":
+        wrapper = "\033[92m"
     else:
         # Defaults to white if invalid color is given
-        wrapper = '\033[47m'
-    return wrapper + msg + '\033[0m'
+        wrapper = "\033[47m"
+    return wrapper + msg + "\033[0m"
 
 
 def load_file(filename, rtype="readlines"):
@@ -96,9 +97,7 @@ def load_file(filename, rtype="readlines"):
 def load_settings(settings_path="input/settings.toml"):
     settings = load_file(settings_path, "toml")
     # Make sure the needed keys are there
-    required_keys = [
-        "vlans"
-    ]
+    required_keys = ["vlans"]
     for key in required_keys:
         if key not in settings:
             sys.exit(f"Missing key {key}, please make sure all settings are set")

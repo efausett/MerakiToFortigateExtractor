@@ -1,12 +1,10 @@
 import ipaddress
 import logging
 import sys
-
 from datetime import datetime
 from pathlib import Path
 
-from mytools import fileops, merakiops
-
+from meraki_converter.mytools import fileops, merakiops
 
 # Setup logging
 logs_path = "output/logs/"
@@ -242,7 +240,7 @@ def parse_dhcp_settings(vlan_data):
     dhcp_settings.append(f"        set netmask {netmask}\n")
     dhcp_settings.append(f'        set interface "{vlan_int}"\n')
     dhcp_settings.append(f"        set lease-time {lease_time_int}\n")
-    
+
     if dns_servers == "upstream_dns":
         dhcp_settings.append("        set dns-service default\n")
     else:
@@ -286,8 +284,6 @@ def process_vlans(dashboard, network):
 
     interface = settings["vlans"]["interface"]
 
-    print(interface)
-
     for device in devices:
         if "MX" in device["model"]:
             logging.info(f"Found a Meraki {device['model']}")
@@ -295,7 +291,6 @@ def process_vlans(dashboard, network):
     if not mx_found:
         logging.info("No MX appliance was found for specified network")
         sys.exit(f"The selected network {network[1]} does not have an MX appliance")
-
 
     # Check if Vlans are enabled and if not exit
     if not dashboard.appliance.getNetworkApplianceVlansSettings(network[0])[
@@ -322,8 +317,6 @@ def process_vlans(dashboard, network):
     # Start at 10 to avoid conflicts with existing fortigate settings
     count = 10
     vlans = dashboard.appliance.getNetworkApplianceVlans(network[0])
-
-    print(vlans)
 
     # Loop to convert Meraki variables into FortiGate format.
     for vlan in vlans:
@@ -374,7 +367,7 @@ def process_vlans(dashboard, network):
                 f"        set dhcp-relay-ip {' '.join(relay_servers)}\n"
             )
         interface_config.append(f"    next\n")
-        
+
     # If DHCP is enabled, convert DHCP settings to FortiGate format.
     if found_dhcp:
         logging.info("Processing dhcp settings")
@@ -399,9 +392,11 @@ def process_vlans(dashboard, network):
         interface_config.extend(route_map)
     fileops.writelines_to_file(filename, interface_config)
 
- # Connect to Meraki dashboard.
- # User selects organization and network.
- # Once user gives input config is created in output file.
+
+# Connect to Meraki dashboard.
+# User selects organization and network.
+# Once user gives input config is created in output file.
+
 
 def main():
     dashboard = merakiops.get_dashboard()

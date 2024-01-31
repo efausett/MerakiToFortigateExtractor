@@ -1,9 +1,10 @@
-'''Doc string'''
+"""Doc string"""
 
 import os
 import sys
 
 import meraki
+
 
 def get_dashboard(key=None, print_console=False, output_log=False):
     """Instantiate the Meraki dashboard
@@ -27,7 +28,8 @@ def get_dashboard(key=None, print_console=False, output_log=False):
 
     if "MERAKI_DASHBOARD_API_KEY" in os.environ:
         return meraki.DashboardAPI(
-            output_log=False, print_console=False, suppress_logging=True)
+            output_log=False, print_console=False, suppress_logging=True
+        )
 
     sys.exit("MERAKI_DASHBOARD_API_KEY not found.")
 
@@ -38,7 +40,7 @@ def validate_integer_in_range(end_range):
             selected = int(
                 input("\nEnter the number next to the name you would like to use: ")
             )
-            assert selected in range(1, end_range+1)
+            assert selected in range(1, end_range + 1)
         except ValueError:
             print("\tThat is not an integer!\n")
         except AssertionError:
@@ -46,26 +48,26 @@ def validate_integer_in_range(end_range):
         else:
             break
     print()
-    return selected-1
+    return selected - 1
 
 
 def select_organization(dashboard):
-    '''Lists all the organizations and prompts the user to select one
-    
+    """Lists all the organizations and prompts the user to select one
+
     Args:
         dashboard (object): An instance of the Meraki dashboard
     Returns:
         A tuple containing organization ID and name
-    '''
+    """
     organizations = dashboard.organizations.getOrganizations()
-    organizations.sort(key=lambda x: x['name'])
-    print('\nSelect organization:')
+    organizations.sort(key=lambda x: x["name"])
+    print("\nSelect organization:")
     for line_num, organization in enumerate(organizations, start=1):
         print(f'{line_num} - {organization["name"]}')
     selected = validate_integer_in_range(len(organizations))
     return (
-        organizations[int(selected)]['id'],
-        organizations[int(selected)]['name'],
+        organizations[int(selected)]["id"],
+        organizations[int(selected)]["name"],
     )
 
 
@@ -85,10 +87,12 @@ def select_network(dashboard, org, lines_to_display=25):
     networks = dashboard.organizations.getOrganizationNetworks(org)
 
     while not network_list:
-        search_name = input("Enter a name to search for or leave blank for all networks: ")
+        search_name = input(
+            "Enter a name to search for or leave blank for all networks: "
+        )
         if search_name:
             for network in networks:
-                if search_name.lower() in network['name'].lower():
+                if search_name.lower() in network["name"].lower():
                     network_list.append(network)
         else:
             network_list = networks
@@ -108,6 +112,4 @@ def select_network(dashboard, org, lines_to_display=25):
             print(f"No networks found matching {search_name}")
 
     selected = validate_integer_in_range(len(network_list))
-    return ([network_list[int(selected)]["id"], network_list[int(selected)]["name"]])
-
-
+    return [network_list[int(selected)]["id"], network_list[int(selected)]["name"]]

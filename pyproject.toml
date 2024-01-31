@@ -7,7 +7,7 @@ name = "MerakiToFortinetConverter"
 version = "0.0.1"
 
 [project.scripts]
-convert-meraki = "vlans:main"
+meraki_converter = "meraki_converter.vlans:main"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }

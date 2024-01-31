@@ -1,9 +1,7 @@
 import pytest
 
-from src.vlans import match_lease_time, parse_dhcp_options
-
-from src.mytools.fileops import validate_domain
-
+from meraki_converter.mytools.fileops import validate_domain
+from meraki_converter.vlans import match_lease_time, parse_dhcp_options
 
 # ------------------------TEST match_lease_time-------------------------
 """
