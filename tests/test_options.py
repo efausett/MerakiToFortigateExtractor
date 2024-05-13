@@ -1,7 +1,9 @@
+"""Test the options function in main"""
+
 import pytest
 
-from meraki_converter.mytools.fileops import validate_domain
-from meraki_converter.vlans import match_lease_time, parse_dhcp_options
+from meraki_converter.main import convert_lease_time_to_seconds, parse_dhcp_options
+from meraki_converter.common.fileops import validate_domain
 
 # ------------------------TEST match_lease_time-------------------------
 """
@@ -18,14 +20,14 @@ def test_match_lease_time_30_min():
     """
     Test that given a lease time of 30 minutes, 1800 seconds is returned
     """
-    assert match_lease_time("30 minutes") == "1800"
+    assert convert_lease_time_to_seconds("30 minutes") == "1800"
 
 
 def test_match_lease_time_1_week():
     """
     Test that given a lease time of 1 week, 604800 seconds is returned
     """
-    assert match_lease_time("1 week") == "604800"
+    assert convert_lease_time_to_seconds("1 week") == "604800"
 
 
 def test_match_lease_time_invalid_lease():
@@ -33,8 +35,89 @@ def test_match_lease_time_invalid_lease():
     Test that given a lease time not yet defined, we raise a ValueError
     """
     with pytest.raises(ValueError) as excinfo:
-        match_lease_time("2 hours")
+        convert_lease_time_to_seconds("2 hours")
     assert str(excinfo.value) == "The specified lease time has not been defined"
+
+
+# ---------------------TEST parse_dhcp_options-----------------------
+"""
+dhcpOptions*:array[]
+
+The list of DHCP options that will be included in DHCP responses. 
+Each object in the list should have "code", "type", and "value" properties.
+
+    code*:string
+    The code for the DHCP option. This should be an integer between 2 and 254.
+
+    type*:string
+    The type for the DHCP option. One of: 'text', 'ip', 'hex' or 'integer'
+
+    value*:string
+    The value for the DHCP option
+"""
+
+# Arrange
+code_15 = [{"code": "15", "type": "text", "value": "example.org"}]
+code_150 = [{"code": "150", "type": "ip", "value": "1.1.1.1"}]
+code_150_dual_ips = [{"code": "150", "type": "ip", "value": "1.1.1.1, 2.2.2.2"}]
+dual_options = [
+    {"type": "text", "code": "15", "value": "my.example.org"},
+    {"type": "ip", "code": "150", "value": "1.1.1.1, 2.2.2.2"},
+]
+code_unknown = [{"code": "2", "type": "text", "value": "unknown"}]
+type_unknown = [{"code": "15", "type": "float", "value": "unknown"}]
+
+
+def test_parse_dhcp_options_code_15():
+    """
+    Test that given code 15 and type is text, a valid domain is returned
+    """
+    assert parse_dhcp_options(code_15) == {"domain_name": "example.org", "ip_list": ""}
+
+
+def test_parse_dhcp_options_code_150():
+    """
+    Test that give code 150 and type ip, a valid IP is returned
+    """
+    assert parse_dhcp_options(code_150) == {"domain_name": "", "ip_list": "1.1.1.1"}
+
+
+def test_parse_dhcp_options_code_150_dual_ips():
+    """
+    Test that give code 150 and type ip where there are two IPs, two are returned
+    """
+    assert parse_dhcp_options(code_150_dual_ips) == {
+        "domain_name": "",
+        "ip_list": "1.1.1.1 2.2.2.2",
+    }
+
+
+def test_parse_dhcp_options_dual_options():
+    """
+    Test that when given multiple options, those options are all returned
+    """
+    assert parse_dhcp_options(dual_options) == {
+        "domain_name": "my.example.org",
+        "ip_list": "1.1.1.1 2.2.2.2",
+    }
+
+
+def test_parse_dhcp_options_code_unknown():
+    """
+    Test that when given an undefined code, a TypeError is raised
+    """
+    with pytest.raises(TypeError) as excinfo:
+        parse_dhcp_options(code_unknown)
+    assert str(excinfo.value) == "Undefined code provided"
+
+
+def test_parse_dhcp_options_type_unknown():
+    """
+    Test that when given an undefined code, a TypeError is raised
+    """
+    with pytest.raises(TypeError) as excinfo:
+        parse_dhcp_options(type_unknown)
+    assert str(excinfo.value) == "Undefined code provided"
 
 
 # ------------------------TEST validate_domain--------------------------
@@ -129,84 +212,3 @@ def test_domain_name_with_hyphen_no_exception_raised():
         validate_domain("my-example.org")
     except Exception as excinfo:
         pytest.fail(f"Unexpected exception raised: {excinfo}")
-
-
-# ---------------------TEST parse_dhcp_options--------------------------
-"""
-dhcpOptions*:array[]
-
-The list of DHCP options that will be included in DHCP responses. 
-Each object in the list should have "code", "type", and "value" properties.
-
-    code*:string
-    The code for the DHCP option. This should be an integer between 2 and 254.
-
-    type*:string
-    The type for the DHCP option. One of: 'text', 'ip', 'hex' or 'integer'
-
-    value*:string
-    The value for the DHCP option
-"""
-
-# Arrange
-code_15 = [{"code": "15", "type": "text", "value": "example.org"}]
-code_150 = [{"code": "150", "type": "ip", "value": "1.1.1.1"}]
-code_150_dual_ips = [{"code": "150", "type": "ip", "value": "1.1.1.1, 2.2.2.2"}]
-dual_options = [
-    {"type": "text", "code": "15", "value": "my.example.org"},
-    {"type": "ip", "code": "150", "value": "1.1.1.1, 2.2.2.2"},
-]
-code_unknown = [{"code": "2", "type": "text", "value": "unknown"}]
-type_unknown = [{"code": "15", "type": "float", "value": "unknown"}]
-
-
-def test_parse_dhcp_options_code_15():
-    """
-    Test that given code 15 and type is text, a valid domain is returned
-    """
-    assert parse_dhcp_options(code_15) == {"dn": "example.org", "ip_list": []}
-
-
-def test_parse_dhcp_options_code_150():
-    """
-    Test that give code 150 and type ip, a valid IP is returned
-    """
-    assert parse_dhcp_options(code_150) == {"dn": "", "ip_list": ["1.1.1.1"]}
-
-
-def test_parse_dhcp_options_code_150_dual_ips():
-    """
-    Test that give code 150 and type ip where there are two IPs, two are returned
-    """
-    assert parse_dhcp_options(code_150_dual_ips) == {
-        "dn": "",
-        "ip_list": ["1.1.1.1", "2.2.2.2"],
-    }
-
-
-def test_parse_dhcp_options_dual_options():
-    """
-    Test that when given multiple options, those options are all returned
-    """
-    assert parse_dhcp_options(dual_options) == {
-        "dn": "my.example.org",
-        "ip_list": ["1.1.1.1", "2.2.2.2"],
-    }
-
-
-def test_parse_dhcp_options_code_unknown():
-    """
-    Test that when given an undefined code, a TypeError is raised
-    """
-    with pytest.raises(TypeError) as excinfo:
-        parse_dhcp_options(code_unknown)
-    assert str(excinfo.value) == "Unknown code provided"
-
-
-def test_parse_dhcp_options_type_unknown():
-    """
-    Test that when given an undefined code, a TypeError is raised
-    """
-    with pytest.raises(TypeError) as excinfo:
-        parse_dhcp_options(type_unknown)
-    assert str(excinfo.value) == "Unknown code provided"

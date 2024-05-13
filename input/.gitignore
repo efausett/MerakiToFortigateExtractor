@@ -1,0 +1,4 @@
+*
+!.gitignore
+!myorg_settings_template.toml
+!general_settings_template.toml

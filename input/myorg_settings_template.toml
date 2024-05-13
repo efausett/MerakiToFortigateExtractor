@@ -1,0 +1,68 @@
+# myorg_settings.toml
+
+# Config system global
+[global]
+hostname = ""
+gui_theme = ""
+
+# config system interface
+[interface]
+loopback_name = ""
+loopback_description = ""
+loopback_ip = ""
+wan_name = ""
+wan_description = ""
+wan_ip = ""
+wan_mask = ""
+wan_gw = ""
+lan_interface = ""
+
+# config system dns
+[system_dns]
+system_dns_primary = ""
+system_dns_secondary = ""
+system_domain = ""
+
+# config system central-management
+[fortimanager]
+fortimanager_server = ""
+
+# config log fortianalyzer setting
+[fortianalyzer]
+fortianalyzer_server = ""
+fortianalyzer_serial = ""
+
+# config vpn ipsec phase1-interface
+[ipsec]
+ipsec_remote_gw = ""
+ipsec_vpn_secret = ""
+
+# config router bgp
+[bgp]
+local_asn = ""
+remote_asn = ""
+neighbor_ip = ""
+
+# config system admin
+[user]
+user1 = ""
+user1_password = ""
+user1_profile = ""
+user2 = ""
+user2_password = ""
+user2_profile = ""
+user3 = ""
+user3_password = ""
+user3_profile = ""
+
+# config user tacacs+
+[tacacs]
+ise_server = ""
+ise_key = ""
+
+# config system netflow
+[netflow]
+netflow_collector_ip = ""
+
+[banner]
+banner = """Your banner"""
